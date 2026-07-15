@@ -1,6 +1,7 @@
 package io.github.hevymcp.mcp;
 
 import io.github.hevymcp.hevy.model.Routine;
+import io.github.hevymcp.hevy.model.ExerciseHistoryEntry;
 import io.github.hevymcp.hevy.model.RoutineExercise;
 import io.github.hevymcp.hevy.model.RoutinePage;
 import io.github.hevymcp.hevy.model.RoutineSet;
@@ -48,6 +49,9 @@ class McpOutputSchemaTest {
                 .containsExactlyInAnyOrder("exerciseTemplateId", "sets");
         assertThat(requiredProperties(RoutineUpdateRequest.RoutineUpdate.class))
                 .containsExactlyInAnyOrder("title", "exercises");
+        assertThat(requiredProperties(ExerciseHistoryEntry.class)).containsExactlyInAnyOrder(
+                "workoutId", "workoutTitle", "workoutStartTime", "workoutEndTime",
+                "exerciseTemplateId", "setType");
     }
 
     private List<String> requiredProperties(Class<?> type) throws Exception {

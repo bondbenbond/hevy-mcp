@@ -1,10 +1,16 @@
 package io.github.hevymcp.hevy;
 
 import io.github.hevymcp.config.HevyProperties;
+import io.github.hevymcp.hevy.model.ExerciseTemplate;
+import io.github.hevymcp.hevy.model.ExerciseTemplatePage;
+import io.github.hevymcp.hevy.model.ExerciseTemplateSearchResult;
+import io.github.hevymcp.hevy.model.ExerciseHistory;
 import io.github.hevymcp.hevy.model.Routine;
 import io.github.hevymcp.hevy.model.RoutinePage;
 import io.github.hevymcp.hevy.model.RoutineResponse;
 import io.github.hevymcp.hevy.model.RoutineUpdateRequest;
+import io.github.hevymcp.hevy.model.RoutineFolder;
+import io.github.hevymcp.hevy.model.RoutineFolderPage;
 import io.github.hevymcp.hevy.model.Workout;
 import io.github.hevymcp.hevy.model.WorkoutPage;
 import org.slf4j.Logger;
@@ -17,13 +23,18 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 @Component
 public final class HevyClient {
 
     private static final Logger log = LoggerFactory.getLogger(HevyClient.class);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
-    private static final int MAX_PAGE_SIZE = 10;
+    private static final int MAX_WORKOUT_ROUTINE_PAGE_SIZE = 10;
+    private static final int MAX_EXERCISE_TEMPLATE_PAGE_SIZE = 100;
+    private static final int MAX_EXERCISE_TEMPLATE_SEARCH_RESULTS = 100;
 
     private final WebClient webClient;
 
@@ -35,7 +46,7 @@ public final class HevyClient {
     }
 
     public WorkoutPage getWorkouts(int page, int pageSize) {
-        validatePage(page, pageSize);
+        validatePage(page, pageSize, MAX_WORKOUT_ROUTINE_PAGE_SIZE);
         log.info("Calling Hevy operation=get_workouts page={} pageSize={}", page, pageSize);
         return execute(webClient.get().uri(uri -> uri.path("/v1/workouts")
                 .queryParam("page", page).queryParam("pageSize", pageSize).build())
@@ -52,7 +63,7 @@ public final class HevyClient {
     }
 
     public RoutinePage getRoutines(int page, int pageSize) {
-        validatePage(page, pageSize);
+        validatePage(page, pageSize, MAX_WORKOUT_ROUTINE_PAGE_SIZE);
         log.info("Calling Hevy operation=get_routines page={} pageSize={}", page, pageSize);
         return execute(webClient.get().uri(uri -> uri.path("/v1/routines")
                 .queryParam("page", page).queryParam("pageSize", pageSize).build())
@@ -81,6 +92,107 @@ public final class HevyClient {
         return execute(webClient.put().uri("/v1/routines/{id}", routineId).bodyValue(request)
                 .retrieve().onStatus(HttpStatusCode::isError, upstream -> upstreamError(upstream.statusCode(), "routine"))
                 .bodyToMono(Routine.class), "routine");
+    }
+
+    public ExerciseTemplatePage getExerciseTemplates(int page, int pageSize) {
+        validatePage(page, pageSize, MAX_EXERCISE_TEMPLATE_PAGE_SIZE);
+        log.info("Calling Hevy operation=get_exercise_templates page={} pageSize={}", page, pageSize);
+        return execute(webClient.get().uri(uri -> uri.path("/v1/exercise_templates")
+                .queryParam("page", page).queryParam("pageSize", pageSize).build())
+                .retrieve().onStatus(HttpStatusCode::isError,
+                        response -> upstreamError(response.statusCode(), "exercise templates"))
+                .bodyToMono(ExerciseTemplatePage.class), "exercise templates");
+    }
+
+    public ExerciseTemplate getExerciseTemplate(String exerciseTemplateId) {
+        requireId(exerciseTemplateId, "exercise template");
+        log.info("Calling Hevy operation=get_exercise_template exerciseTemplateId={}", exerciseTemplateId);
+        return execute(webClient.get().uri("/v1/exercise_templates/{id}", exerciseTemplateId)
+                .retrieve().onStatus(HttpStatusCode::isError,
+                        response -> upstreamError(response.statusCode(), "exercise template"))
+                .bodyToMono(ExerciseTemplate.class), "exercise template");
+    }
+
+    public ExerciseTemplateSearchResult searchExerciseTemplates(String query, int maxResults) {
+        if (query == null || query.isBlank()) {
+            throw new HevyApiException(HevyErrorCode.BAD_REQUEST, "An exercise template search query is required.");
+        }
+        if (maxResults < 1 || maxResults > MAX_EXERCISE_TEMPLATE_SEARCH_RESULTS) {
+            throw new HevyApiException(HevyErrorCode.BAD_REQUEST,
+                    "Maximum search results must be between 1 and 100.");
+        }
+
+        String normalizedQuery = query.strip().toLowerCase(Locale.ROOT);
+        var matches = new ArrayList<ExerciseTemplate>();
+        int page = 1;
+        int pageCount;
+        do {
+            ExerciseTemplatePage result = getExerciseTemplates(page, MAX_EXERCISE_TEMPLATE_PAGE_SIZE);
+            if (result.exerciseTemplates() != null) {
+                result.exerciseTemplates().stream()
+                        .filter(template -> matches(template, normalizedQuery))
+                        .limit(maxResults - matches.size())
+                        .forEach(matches::add);
+            }
+            pageCount = result.pageCount() == null ? page : result.pageCount();
+            page++;
+        }
+        while (page <= pageCount && matches.size() < maxResults);
+
+        return new ExerciseTemplateSearchResult(query.strip(), matches.size(), List.copyOf(matches));
+    }
+
+    public ExerciseHistory getExerciseHistory(String exerciseTemplateId, String startDate, String endDate) {
+        requireId(exerciseTemplateId, "exercise template");
+        log.info("Calling Hevy operation=get_exercise_history exerciseTemplateId={}", exerciseTemplateId);
+        return execute(webClient.get().uri(uri -> {
+                    var builder = uri.path("/v1/exercise_history/{id}");
+                    if (startDate != null && !startDate.isBlank()) {
+                        builder.queryParam("start_date", startDate);
+                    }
+                    if (endDate != null && !endDate.isBlank()) {
+                        builder.queryParam("end_date", endDate);
+                    }
+                    return builder.build(exerciseTemplateId);
+                })
+                .retrieve().onStatus(HttpStatusCode::isError,
+                        response -> upstreamError(response.statusCode(), "exercise history"))
+                .bodyToMono(ExerciseHistory.class), "exercise history");
+    }
+
+    public RoutineFolderPage getRoutineFolders(int page, int pageSize) {
+        validatePage(page, pageSize, MAX_WORKOUT_ROUTINE_PAGE_SIZE);
+        log.info("Calling Hevy operation=get_routine_folders page={} pageSize={}", page, pageSize);
+        return execute(webClient.get().uri(uri -> uri.path("/v1/routine_folders")
+                .queryParam("page", page).queryParam("pageSize", pageSize).build())
+                .retrieve().onStatus(HttpStatusCode::isError,
+                        response -> upstreamError(response.statusCode(), "routine folders"))
+                .bodyToMono(RoutineFolderPage.class), "routine folders");
+    }
+
+    public RoutineFolder getRoutineFolder(String folderId) {
+        requireId(folderId, "routine folder");
+        log.info("Calling Hevy operation=get_routine_folder folderId={}", folderId);
+        return execute(webClient.get().uri("/v1/routine_folders/{id}", folderId)
+                .retrieve().onStatus(HttpStatusCode::isError,
+                        response -> upstreamError(response.statusCode(), "routine folder"))
+                .bodyToMono(RoutineFolder.class), "routine folder");
+    }
+
+    private static boolean matches(ExerciseTemplate template, String query) {
+        if (contains(template.id(), query)
+                || contains(template.title(), query)
+                || contains(template.type(), query)
+                || contains(template.primaryMuscleGroup(), query)
+                || contains(template.equipmentCategory(), query)) {
+            return true;
+        }
+        return template.secondaryMuscleGroups() != null
+                && template.secondaryMuscleGroups().stream().anyMatch(value -> contains(value, query));
+    }
+
+    private static boolean contains(String value, String query) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(query);
     }
 
     private <T> T execute(Mono<T> response, String resource) {
@@ -112,7 +224,13 @@ public final class HevyClient {
 
     private Mono<? extends Throwable> upstreamError(HttpStatusCode status, String resource) {
         log.warn("Hevy upstream failure resource={} status={}", resource, status.value());
-        String noun = "routine".equals(resource) ? "routine" : "workout";
+        String noun = switch (resource) {
+            case "routine", "routines" -> "routine";
+            case "exercise template", "exercise templates" -> "exercise template";
+            case "routine folder", "routine folders" -> "routine folder";
+            case "exercise history" -> "exercise history";
+            default -> "workout";
+        };
         return Mono.error(switch (status.value()) {
             case 400 -> new HevyApiException(HevyErrorCode.BAD_REQUEST, "Hevy rejected the request as invalid.");
             case 401 -> new HevyApiException(HevyErrorCode.CREDENTIALS_REJECTED,
@@ -128,10 +246,10 @@ public final class HevyClient {
         });
     }
 
-    private static void validatePage(int page, int pageSize) {
-        if (page < 1 || pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
+    private static void validatePage(int page, int pageSize, int maxPageSize) {
+        if (page < 1 || pageSize < 1 || pageSize > maxPageSize) {
             throw new HevyApiException(HevyErrorCode.BAD_REQUEST,
-                    "Page must be at least 1 and page size must be between 1 and 10.");
+                    "Page must be at least 1 and page size must be between 1 and " + maxPageSize + ".");
         }
     }
 

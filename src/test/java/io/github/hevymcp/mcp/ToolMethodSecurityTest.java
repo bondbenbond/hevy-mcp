@@ -24,6 +24,15 @@ class ToolMethodSecurityTest {
     static class Config {
         @Bean WorkoutTools workoutTools(HevyClient client) { return new WorkoutTools(client); }
         @Bean RoutineTools routineTools(HevyClient client) { return new RoutineTools(client); }
+        @Bean ExerciseTemplateTools exerciseTemplateTools(HevyClient client) {
+            return new ExerciseTemplateTools(client);
+        }
+        @Bean ExerciseHistoryTools exerciseHistoryTools(HevyClient client) {
+            return new ExerciseHistoryTools(client);
+        }
+        @Bean RoutineFolderTools routineFolderTools(HevyClient client) {
+            return new RoutineFolderTools(client);
+        }
     }
 
     @MockitoBean
@@ -35,12 +44,23 @@ class ToolMethodSecurityTest {
     @Autowired
     RoutineTools routineTools;
 
+    @Autowired
+    ExerciseTemplateTools exerciseTemplateTools;
+
+    @Autowired
+    ExerciseHistoryTools exerciseHistoryTools;
+
+    @Autowired
+    RoutineFolderTools routineFolderTools;
+
     @Test
     @WithMockUser(authorities = "SCOPE_read:workouts")
     void workoutReadScopeCanReadWorkoutsButNotRoutines() {
         workoutTools.getWorkouts(1, 10);
         workoutTools.getWorkout("w1");
         assertThatThrownBy(() -> routineTools.getRoutines(1, 10)).isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> exerciseTemplateTools.getExerciseTemplates(1, 100))
+                .isInstanceOf(AccessDeniedException.class);
     }
 
     @Test
@@ -59,5 +79,35 @@ class ToolMethodSecurityTest {
         routineTools.updateRoutine("r1", update);
         assertThatThrownBy(() -> routineTools.getRoutine("r1")).isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> workoutTools.getWorkouts(1, 10)).isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @WithMockUser(authorities = "SCOPE_read:exercise_templates")
+    void exerciseTemplateReadScopeCanUseOnlyTemplateTools() {
+        exerciseTemplateTools.getExerciseTemplates(1, 100);
+        exerciseTemplateTools.searchExerciseTemplates("bench", 25);
+        exerciseTemplateTools.getExerciseTemplate("template-1");
+        assertThatThrownBy(() -> routineTools.getRoutine("r1")).isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> workoutTools.getWorkout("w1")).isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @WithMockUser(authorities = "SCOPE_read:exercise_history")
+    void exerciseHistoryScopeCanReadOnlyExerciseHistory() {
+        exerciseHistoryTools.getExerciseHistory("template-1", null, null);
+        assertThatThrownBy(() -> exerciseTemplateTools.getExerciseTemplate("template-1"))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> routineFolderTools.getRoutineFolders(1, 10))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @WithMockUser(authorities = "SCOPE_read:routine_folders")
+    void routineFolderScopeCanReadOnlyRoutineFolders() {
+        routineFolderTools.getRoutineFolders(1, 10);
+        routineFolderTools.getRoutineFolder("42");
+        assertThatThrownBy(() -> routineTools.getRoutine("r1")).isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> exerciseHistoryTools.getExerciseHistory("template-1", null, null))
+                .isInstanceOf(AccessDeniedException.class);
     }
 }

@@ -1,7 +1,8 @@
 # Hevy MCP Server
 
 An open-source, authenticated Model Context Protocol (MCP) server for the Hevy API. It exposes
-five focused workout and routine tools over Streamable HTTP and protects them as an OAuth 2.1
+eleven focused workout, routine, exercise-template, and training-history tools over Streamable HTTP
+and protects them as an OAuth 2.1
 resource server.
 
 The application uses Java 21, Spring Boot 4.1.0, Spring AI 2.0.0, Spring Security, and Maven.
@@ -44,8 +45,16 @@ does not need or accept an OAuth client ID or client secret.
 | `get_routines` | Read a paginated routine list | `read:routines` |
 | `get_routine` | Read one routine by ID | `read:routines` |
 | `update_routine` | Replace an existing routine definition | `write:routines` |
+| `get_exercise_templates` | Read a paginated exercise-template list | `read:exercise_templates` |
+| `search_exercise_templates` | Search templates by name, ID, type, muscle, or equipment | `read:exercise_templates` |
+| `get_exercise_template` | Read one exercise template by ID | `read:exercise_templates` |
+| `get_exercise_history` | Read completed set history for an exercise template | `read:exercise_history` |
+| `get_routine_folders` | Read a paginated routine-folder list | `read:routine_folders` |
+| `get_routine_folder` | Read one routine folder by ID | `read:routine_folders` |
 
-Hevy limits workout and routine pages to 10 items. The list tools default to page 1 and 10 items.
+Hevy limits workout, routine, and routine-folder pages to 10 items and exercise-template pages
+to 100. The list tools use those respective limits by default. Exercise-template search walks
+the paginated catalog and returns up to 25 matches by default.
 Read a routine before updating it: Hevy's update operation accepts a replacement routine payload,
 so callers should preserve every exercise and set that is not intentionally changed.
 
@@ -75,7 +84,8 @@ Configure an OAuth 2.1/OIDC authorization server that:
 - publishes OIDC or RFC 8414 discovery metadata and a JWK set;
 - uses `OAUTH_ISSUER_URI` as the exact `iss` claim;
 - includes `OAUTH_AUDIENCE` in `aud`;
-- can grant `read:workouts`, `read:routines`, and `write:routines`;
+- can grant `read:workouts`, `read:routines`, `write:routines`, `read:exercise_templates`,
+  `read:exercise_history`, and `read:routine_folders`;
 - supports the OAuth client registration mechanism required by your MCP client and uses PKCE for
   public authorization-code clients.
 

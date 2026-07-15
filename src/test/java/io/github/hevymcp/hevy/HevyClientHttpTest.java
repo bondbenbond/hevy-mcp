@@ -118,6 +118,106 @@ class HevyClientHttpTest {
     }
 
     @Test
+    void getsAndDeserializesExerciseTemplatePage() {
+        responseBody.set("""
+                {"page":1,"page_count":1,"exercise_templates":[{"id":"template-1",
+                "title":"Incline Bench Press","type":"weight_reps","primary_muscle_group":"chest",
+                "secondary_muscle_groups":["triceps"],"equipment_category":"dumbbell","is_custom":false}]}
+                """);
+
+        var result = client.getExerciseTemplates(1, 100);
+
+        assertThat(result.exerciseTemplates().getFirst().primaryMuscleGroup()).isEqualTo("chest");
+        assertThat(result.exerciseTemplates().getFirst().equipmentCategory()).isEqualTo("dumbbell");
+        assertThat(request.get().path()).isEqualTo("/v1/exercise_templates?page=1&pageSize=100");
+    }
+
+    @Test
+    void getsExerciseTemplateById() {
+        responseBody.set("""
+                {"id":"template-1","title":"Incline Bench Press","type":"weight_reps",
+                "primary_muscle_group":"chest","secondary_muscle_groups":[],
+                "equipment_category":"dumbbell","is_custom":false}
+                """);
+
+        assertThat(client.getExerciseTemplate("template-1").title()).isEqualTo("Incline Bench Press");
+        assertThat(request.get().path()).isEqualTo("/v1/exercise_templates/template-1");
+    }
+
+    @Test
+    void searchesExerciseTemplatesAcrossRelevantFields() {
+        responseBody.set("""
+                {"page":1,"page_count":1,"exercise_templates":[
+                {"id":"template-1","title":"Incline Bench Press","type":"weight_reps",
+                "primary_muscle_group":"chest","secondary_muscle_groups":["triceps"],
+                "equipment_category":"dumbbell","is_custom":false},
+                {"id":"template-2","title":"Back Squat","type":"weight_reps",
+                "primary_muscle_group":"quadriceps","secondary_muscle_groups":["glutes"],
+                "equipment_category":"barbell","is_custom":false}]}
+                """);
+
+        var result = client.searchExerciseTemplates("DUMBBELL", 25);
+
+        assertThat(result.query()).isEqualTo("DUMBBELL");
+        assertThat(result.matchCount()).isEqualTo(1);
+        assertThat(result.exerciseTemplates()).extracting("id").containsExactly("template-1");
+    }
+
+    @Test
+    void rejectsInvalidExerciseTemplateSearchBeforeCallingUpstream() {
+        assertThatThrownBy(() -> client.searchExerciseTemplates(" ", 25))
+                .isInstanceOfSatisfying(HevyApiException.class,
+                        exception -> assertThat(exception.code()).isEqualTo(HevyErrorCode.BAD_REQUEST));
+        assertThatThrownBy(() -> client.searchExerciseTemplates("bench", 101))
+                .isInstanceOfSatisfying(HevyApiException.class,
+                        exception -> assertThat(exception.code()).isEqualTo(HevyErrorCode.BAD_REQUEST));
+        assertThat(request.get()).isNull();
+    }
+
+    @Test
+    void getsExerciseHistoryWithOptionalDateRange() {
+        responseBody.set("""
+                {"exercise_history":[{"workout_id":"workout-1","workout_title":"Upper",
+                "workout_start_time":"2026-07-01T10:00:00Z","workout_end_time":"2026-07-01T11:00:00Z",
+                "exercise_template_id":"template-1","weight_kg":80.5,"reps":8,
+                "distance_meters":null,"duration_seconds":null,"rpe":8.5,
+                "custom_metric":null,"set_type":"normal"}]}
+                """);
+
+        var result = client.getExerciseHistory(
+                "template-1", "2026-07-01T00:00:00Z", "2026-07-31T23:59:59Z");
+
+        assertThat(result.exerciseHistory()).hasSize(1);
+        assertThat(result.exerciseHistory().getFirst().weightKg()).isEqualByComparingTo("80.5");
+        assertThat(request.get().path())
+                .startsWith("/v1/exercise_history/template-1?")
+                .contains("start_date=2026-07-01T00:00:00Z")
+                .contains("end_date=2026-07-31T23:59:59Z");
+    }
+
+    @Test
+    void getsRoutineFolderPageAndFolderById() {
+        responseBody.set("""
+                {"page":1,"page_count":1,"routine_folders":[{"id":42,"index":0,
+                "title":"Push Pull","updated_at":"2026-07-01T00:00:00Z",
+                "created_at":"2026-06-01T00:00:00Z"}]}
+                """);
+
+        var page = client.getRoutineFolders(1, 10);
+
+        assertThat(page.routineFolders().getFirst().id()).isEqualTo(42L);
+        assertThat(request.get().path()).isEqualTo("/v1/routine_folders?page=1&pageSize=10");
+
+        responseBody.set("""
+                {"id":42,"index":0,"title":"Push Pull","updated_at":"2026-07-01T00:00:00Z",
+                "created_at":"2026-06-01T00:00:00Z"}
+                """);
+
+        assertThat(client.getRoutineFolder("42").title()).isEqualTo("Push Pull");
+        assertThat(request.get().path()).isEqualTo("/v1/routine_folders/42");
+    }
+
+    @Test
     void serializesRoutineUpdateAndDeserializesResponse() {
         responseBody.set("""
                 {"id":"r1","title":"Upper revised","exercises":[]}

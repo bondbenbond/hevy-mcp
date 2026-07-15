@@ -19,7 +19,8 @@ class ProtectedResourceMetadataServiceTest {
         assertThat(service.metadata().resource()).isEqualTo("https://mcp.example/mcp");
         assertThat(service.metadata().authorizationServers()).containsExactly("https://issuer.example/");
         assertThat(service.metadata().scopesSupported()).containsExactly(
-                "read:workouts", "read:routines", "write:routines");
+                "read:workouts", "read:routines", "write:routines", "read:exercise_templates",
+                "read:exercise_history", "read:routine_folders");
     }
 
     @Test

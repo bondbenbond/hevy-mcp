@@ -12,7 +12,7 @@ import java.io.IOException;
 @Component
 public final class OAuthChallengeEntryPoint implements AuthenticationEntryPoint {
 
-    private static final String SCOPES = "read:workouts read:routines write:routines";
+    private static final String SCOPES = String.join(" ", ProtectedResourceMetadataService.SCOPES);
     private final ProtectedResourceMetadataService metadataService;
 
     public OAuthChallengeEntryPoint(ProtectedResourceMetadataService metadataService) {

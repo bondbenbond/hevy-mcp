@@ -9,7 +9,8 @@ import java.util.List;
 public final class ProtectedResourceMetadataService {
 
     public static final List<String> SCOPES = List.of(
-            "read:workouts", "read:routines", "write:routines");
+            "read:workouts", "read:routines", "write:routines", "read:exercise_templates",
+            "read:exercise_history", "read:routine_folders");
 
     private final McpSecurityProperties properties;
 
