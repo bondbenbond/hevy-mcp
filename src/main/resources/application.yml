@@ -1,0 +1,38 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+hevy:
+  api-key: ${HEVY_API_KEY}
+  base-url: ${HEVY_API_BASE_URL:https://api.hevyapp.com}
+
+mcp:
+  security:
+    issuer-uri: ${OAUTH_ISSUER_URI}
+    audience: ${OAUTH_AUDIENCE}
+    resource-uri: ${MCP_RESOURCE_URI}
+
+spring:
+  application:
+    name: ${MCP_SERVER_NAME:hevy-mcp}
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+  ai:
+    mcp:
+      server:
+        name: ${MCP_SERVER_NAME:hevy-mcp}
+        version: "0.1.0"
+        protocol: STREAMABLE
+        type: SYNC
+        annotation-scanner:
+          enabled: true
+        streamable-http:
+          mcp-endpoint: /mcp
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

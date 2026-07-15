@@ -1,0 +1,16 @@
+services:
+  hevy-mcp:
+    build:
+      context: .
+    container_name: ${CONTAINER_NAME:-hevy-mcp}
+    restart: unless-stopped
+    environment:
+      HEVY_API_KEY: ${HEVY_API_KEY}
+      HEVY_API_BASE_URL: ${HEVY_API_BASE_URL:-https://api.hevyapp.com}
+      OAUTH_ISSUER_URI: ${OAUTH_ISSUER_URI}
+      OAUTH_AUDIENCE: ${OAUTH_AUDIENCE}
+      MCP_RESOURCE_URI: ${MCP_RESOURCE_URI}
+      MCP_SERVER_NAME: ${MCP_SERVER_NAME:-hevy-mcp}
+      SERVER_PORT: ${SERVER_PORT:-8080}
+    ports:
+      - "${HOST_PORT:-8080}:${SERVER_PORT:-8080}"
