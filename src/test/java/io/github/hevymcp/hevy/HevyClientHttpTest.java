@@ -225,7 +225,7 @@ class HevyClientHttpTest {
         var set = new RoutineUpdateRequest.SetUpdate(
                 "normal", new BigDecimal("80.5"), 8, null, null, null, null);
         var exercise = new RoutineUpdateRequest.ExerciseUpdate(
-                "template-1", null, 90, "Controlled", List.of(set));
+                "template-1", 7, 90, "Controlled", List.of(set));
         var update = new RoutineUpdateRequest(new RoutineUpdateRequest.RoutineUpdate(
                 "Upper revised", "Notes", List.of(exercise)));
 
@@ -234,8 +234,27 @@ class HevyClientHttpTest {
         assertThat(request.get().path()).isEqualTo("/v1/routines/r1");
         assertThat(request.get().body())
                 .contains("\"exercise_template_id\":\"template-1\"")
+                .contains("\"superset_id\":7")
+                .doesNotContain("supersets_id")
                 .contains("\"rest_seconds\":90")
-                .contains("\"weight_kg\":80.5");
+                .contains("\"weight_kg\":80.5")
+                .doesNotContain("distance_meters", "duration_seconds", "custom_metric", "rep_range");
+    }
+
+    @Test
+    void includesSafeHevyValidationDetailForBadRequests() {
+        responseStatus.set(400);
+        responseBody.set("""
+                {"error":"sets[0].type must be one of warmup, normal, failure, dropset"}
+                """);
+
+        assertThatThrownBy(() -> client.getWorkout("w1"))
+                .isInstanceOfSatisfying(HevyApiException.class, exception -> {
+                    assertThat(exception.code()).isEqualTo(HevyErrorCode.BAD_REQUEST);
+                    assertThat(exception.getMessage()).isEqualTo(
+                            "Hevy rejected the request as invalid. Hevy reported: "
+                                    + "sets[0].type must be one of warmup, normal, failure, dropset");
+                });
     }
 
     @ParameterizedTest

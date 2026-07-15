@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.codec.DecodingException;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import reactor.core.publisher.Mono;
@@ -50,7 +51,7 @@ public final class HevyClient {
         log.info("Calling Hevy operation=get_workouts page={} pageSize={}", page, pageSize);
         return execute(webClient.get().uri(uri -> uri.path("/v1/workouts")
                 .queryParam("page", page).queryParam("pageSize", pageSize).build())
-                .retrieve().onStatus(HttpStatusCode::isError, response -> upstreamError(response.statusCode(), "workouts"))
+                .retrieve().onStatus(HttpStatusCode::isError, response -> upstreamError(response, "workouts"))
                 .bodyToMono(WorkoutPage.class), "workouts");
     }
 
@@ -58,7 +59,7 @@ public final class HevyClient {
         requireId(workoutId, "workout");
         log.info("Calling Hevy operation=get_workout workoutId={}", workoutId);
         return execute(webClient.get().uri("/v1/workouts/{id}", workoutId)
-                .retrieve().onStatus(HttpStatusCode::isError, response -> upstreamError(response.statusCode(), "workout"))
+                .retrieve().onStatus(HttpStatusCode::isError, response -> upstreamError(response, "workout"))
                 .bodyToMono(Workout.class), "workout");
     }
 
@@ -67,7 +68,7 @@ public final class HevyClient {
         log.info("Calling Hevy operation=get_routines page={} pageSize={}", page, pageSize);
         return execute(webClient.get().uri(uri -> uri.path("/v1/routines")
                 .queryParam("page", page).queryParam("pageSize", pageSize).build())
-                .retrieve().onStatus(HttpStatusCode::isError, response -> upstreamError(response.statusCode(), "routines"))
+                .retrieve().onStatus(HttpStatusCode::isError, response -> upstreamError(response, "routines"))
                 .bodyToMono(RoutinePage.class), "routines");
     }
 
@@ -75,7 +76,7 @@ public final class HevyClient {
         requireId(routineId, "routine");
         log.info("Calling Hevy operation=get_routine routineId={}", routineId);
         RoutineResponse response = execute(webClient.get().uri("/v1/routines/{id}", routineId)
-                .retrieve().onStatus(HttpStatusCode::isError, upstream -> upstreamError(upstream.statusCode(), "routine"))
+                .retrieve().onStatus(HttpStatusCode::isError, upstream -> upstreamError(upstream, "routine"))
                 .bodyToMono(RoutineResponse.class), "routine");
         if (response.routine() == null) {
             throw new HevyApiException(HevyErrorCode.INVALID_RESPONSE, "The Hevy API returned an invalid routine response.");
@@ -90,7 +91,7 @@ public final class HevyClient {
         }
         log.info("Calling Hevy operation=update_routine routineId={}", routineId);
         return execute(webClient.put().uri("/v1/routines/{id}", routineId).bodyValue(request)
-                .retrieve().onStatus(HttpStatusCode::isError, upstream -> upstreamError(upstream.statusCode(), "routine"))
+                .retrieve().onStatus(HttpStatusCode::isError, upstream -> upstreamError(upstream, "routine"))
                 .bodyToMono(Routine.class), "routine");
     }
 
@@ -100,7 +101,7 @@ public final class HevyClient {
         return execute(webClient.get().uri(uri -> uri.path("/v1/exercise_templates")
                 .queryParam("page", page).queryParam("pageSize", pageSize).build())
                 .retrieve().onStatus(HttpStatusCode::isError,
-                        response -> upstreamError(response.statusCode(), "exercise templates"))
+                        response -> upstreamError(response, "exercise templates"))
                 .bodyToMono(ExerciseTemplatePage.class), "exercise templates");
     }
 
@@ -109,7 +110,7 @@ public final class HevyClient {
         log.info("Calling Hevy operation=get_exercise_template exerciseTemplateId={}", exerciseTemplateId);
         return execute(webClient.get().uri("/v1/exercise_templates/{id}", exerciseTemplateId)
                 .retrieve().onStatus(HttpStatusCode::isError,
-                        response -> upstreamError(response.statusCode(), "exercise template"))
+                        response -> upstreamError(response, "exercise template"))
                 .bodyToMono(ExerciseTemplate.class), "exercise template");
     }
 
@@ -156,7 +157,7 @@ public final class HevyClient {
                     return builder.build(exerciseTemplateId);
                 })
                 .retrieve().onStatus(HttpStatusCode::isError,
-                        response -> upstreamError(response.statusCode(), "exercise history"))
+                        response -> upstreamError(response, "exercise history"))
                 .bodyToMono(ExerciseHistory.class), "exercise history");
     }
 
@@ -166,7 +167,7 @@ public final class HevyClient {
         return execute(webClient.get().uri(uri -> uri.path("/v1/routine_folders")
                 .queryParam("page", page).queryParam("pageSize", pageSize).build())
                 .retrieve().onStatus(HttpStatusCode::isError,
-                        response -> upstreamError(response.statusCode(), "routine folders"))
+                        response -> upstreamError(response, "routine folders"))
                 .bodyToMono(RoutineFolderPage.class), "routine folders");
     }
 
@@ -175,7 +176,7 @@ public final class HevyClient {
         log.info("Calling Hevy operation=get_routine_folder folderId={}", folderId);
         return execute(webClient.get().uri("/v1/routine_folders/{id}", folderId)
                 .retrieve().onStatus(HttpStatusCode::isError,
-                        response -> upstreamError(response.statusCode(), "routine folder"))
+                        response -> upstreamError(response, "routine folder"))
                 .bodyToMono(RoutineFolder.class), "routine folder");
     }
 
@@ -222,8 +223,16 @@ public final class HevyClient {
         }
     }
 
-    private Mono<? extends Throwable> upstreamError(HttpStatusCode status, String resource) {
+    private Mono<? extends Throwable> upstreamError(ClientResponse response, String resource) {
+        HttpStatusCode status = response.statusCode();
         log.warn("Hevy upstream failure resource={} status={}", resource, status.value());
+        return response.bodyToMono(UpstreamErrorBody.class)
+                .defaultIfEmpty(new UpstreamErrorBody(null, null))
+                .onErrorReturn(new UpstreamErrorBody(null, null))
+                .map(body -> upstreamException(status, resource, safeValidationDetail(body)));
+    }
+
+    private HevyApiException upstreamException(HttpStatusCode status, String resource, String validationDetail) {
         String noun = switch (resource) {
             case "routine", "routines" -> "routine";
             case "exercise template", "exercise templates" -> "exercise template";
@@ -231,8 +240,9 @@ public final class HevyClient {
             case "exercise history" -> "exercise history";
             default -> "workout";
         };
-        return Mono.error(switch (status.value()) {
-            case 400 -> new HevyApiException(HevyErrorCode.BAD_REQUEST, "Hevy rejected the request as invalid.");
+        return switch (status.value()) {
+            case 400 -> new HevyApiException(HevyErrorCode.BAD_REQUEST,
+                    "Hevy rejected the request as invalid." + validationDetail);
             case 401 -> new HevyApiException(HevyErrorCode.CREDENTIALS_REJECTED,
                     "The Hevy API rejected the configured API credentials.");
             case 403 -> new HevyApiException(HevyErrorCode.FORBIDDEN,
@@ -243,7 +253,19 @@ public final class HevyClient {
                     "The Hevy API rate limit was reached. Try again later.");
             default -> new HevyApiException(HevyErrorCode.UNAVAILABLE,
                     "The Hevy API is temporarily unavailable.");
-        });
+        };
+    }
+
+    private static String safeValidationDetail(UpstreamErrorBody body) {
+        String detail = body.error() == null || body.error().isBlank() ? body.message() : body.error();
+        if (detail == null || detail.isBlank()) {
+            return "";
+        }
+        String singleLine = detail.replaceAll("[\\p{Cntrl}]+", " ").strip();
+        if (singleLine.length() > 300) {
+            singleLine = singleLine.substring(0, 300) + "…";
+        }
+        return " Hevy reported: " + singleLine;
     }
 
     private static void validatePage(int page, int pageSize, int maxPageSize) {
@@ -257,5 +279,8 @@ public final class HevyClient {
         if (id == null || id.isBlank()) {
             throw new HevyApiException(HevyErrorCode.BAD_REQUEST, "A " + resource + " ID is required.");
         }
+    }
+
+    private record UpstreamErrorBody(String error, String message) {
     }
 }
