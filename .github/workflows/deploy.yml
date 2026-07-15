@@ -1,0 +1,88 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Publish image"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (defaults to the selected commit SHA)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  resolve_tag:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    outputs:
+      image_tag: ${{ steps.resolve.outputs.image_tag }}
+    steps:
+      - name: Resolve image tag
+        id: resolve
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUBLISHED_SHA: ${{ github.event.workflow_run.head_sha }}
+          REQUESTED_TAG: ${{ inputs.image_tag }}
+          SELECTED_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            tag="$PUBLISHED_SHA"
+          elif [[ -n "$REQUESTED_TAG" ]]; then
+            tag="$REQUESTED_TAG"
+          else
+            tag="$SELECTED_SHA"
+          fi
+          echo "image_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Using image tag: $tag"
+
+  deploy_prod:
+    name: Deploy prod
+    runs-on: ubuntu-latest
+    needs: resolve_tag
+    environment: prod
+    env:
+      IMAGE_TAG: ${{ needs.resolve_tag.outputs.image_tag }}
+      HEVY_API_KEY: ${{ secrets.HEVY_API_KEY }}
+      HEVY_API_BASE_URL: ${{ vars.HEVY_API_BASE_URL }}
+      OAUTH_ISSUER_URI: ${{ secrets.OAUTH_ISSUER_URI }}
+      OAUTH_AUDIENCE: ${{ vars.OAUTH_AUDIENCE }}
+      MCP_RESOURCE_URI: ${{ vars.MCP_RESOURCE_URI }}
+      MCP_SERVER_NAME: ${{ vars.MCP_SERVER_NAME }}
+      SERVER_PORT: ${{ vars.SERVER_PORT }}
+      DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+    steps:
+      - name: Deploy on prod host
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script_stop: true
+          envs: IMAGE_TAG,HEVY_API_KEY,HEVY_API_BASE_URL,OAUTH_ISSUER_URI,OAUTH_AUDIENCE,MCP_RESOURCE_URI,MCP_SERVER_NAME,SERVER_PORT,DEPLOY_DIR
+          script: |
+            set -euo pipefail
+            repo_dir="${DEPLOY_DIR:-$HOME/hevy-mcp}"
+            repo_url="https://github.com/${{ github.repository }}.git"
+
+            if [ ! -d "$repo_dir/.git" ]; then
+              git clone "$repo_url" "$repo_dir"
+            fi
+            cd "$repo_dir"
+
+            git fetch origin main
+            git checkout -B deploy FETCH_HEAD
+
+            docker compose -p hevy-mcp-prod -f cd/docker-compose.prod.yml pull
+            docker compose -p hevy-mcp-prod -f cd/docker-compose.prod.yml up -d --remove-orphans

@@ -129,6 +129,33 @@ The runtime image uses Java 21 and a non-root user. No configuration or secret i
 image. The image intentionally has no Docker `HEALTHCHECK` because the minimal runtime does not
 contain a reliable HTTP probe; orchestrators can probe `GET /actuator/health`.
 
+## Continuous deployment
+
+Pushes to `main` run the Maven tests and publish `ghcr.io/bondbenbond/hevy-mcp` with both `latest`
+and commit-SHA tags. A successful publish deploys that immutable SHA to the GitHub `prod`
+environment. The deploy workflow can also be run manually with a specific image tag.
+
+Create a `prod` GitHub Environment with these secrets:
+
+- `SSH_HOST`, `SSH_USER`, and `SSH_PRIVATE_KEY`
+- `SSH_PORT` (optional; defaults to `22`)
+- `DEPLOY_DIR` (optional; defaults to `~/hevy-mcp`)
+- `HEVY_API_KEY`
+- `OAUTH_ISSUER_URI`
+
+Set these variables in the GitHub Environment:
+
+- `OAUTH_AUDIENCE`
+- `MCP_RESOURCE_URI`
+- `HEVY_API_BASE_URL` (optional)
+- `MCP_SERVER_NAME` (optional)
+- `SERVER_PORT` (optional; defaults to `8080`)
+
+The target host needs Git, Docker with Compose, and an external Docker network named `caddy-net`.
+The service is reachable on that network as `hevy-mcp`. Runtime secrets are forwarded for the SSH
+session and are not written into the remote checkout. If the GHCR package is private, authenticate
+Docker to `ghcr.io` on the target host before deploying.
+
 ## Connecting an MCP client
 
 Give an OAuth-capable MCP client the public Streamable HTTP URL, for example
