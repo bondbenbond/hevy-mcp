@@ -1,14 +1,13 @@
 package io.github.hevymcp.hevy.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import io.github.hevymcp.hevy.model.RoutineSet.RepRange;
 import org.jspecify.annotations.Nullable;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record RoutineUpdateRequest(RoutineUpdate routine) {
+public record HevyUpdateRoutineRequest(RoutineUpdate routine) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record RoutineUpdate(String title, @Nullable String notes, List<ExerciseUpdate> exercises) {
@@ -32,5 +31,9 @@ public record RoutineUpdateRequest(RoutineUpdate routine) {
             @Nullable Integer durationSeconds,
             @Nullable BigDecimal customMetric,
             @Nullable RepRange repRange) {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record RepRange(@Nullable Integer start, @Nullable Integer end) {
     }
 }

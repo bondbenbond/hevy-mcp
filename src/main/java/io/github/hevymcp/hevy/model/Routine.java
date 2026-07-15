@@ -9,6 +9,7 @@ import java.util.List;
 public record Routine(
         String id,
         String title,
+        @Nullable String notes,
         @Nullable Long folderId,
         String updatedAt,
         String createdAt,

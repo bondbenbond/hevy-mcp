@@ -1,7 +1,8 @@
 package io.github.hevymcp.mcp;
 
 import io.github.hevymcp.hevy.HevyClient;
-import io.github.hevymcp.hevy.model.RoutineUpdateRequest;
+import io.github.hevymcp.hevy.RoutineUpdateService;
+import io.github.hevymcp.mcp.model.RoutineUpdateInput;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -23,7 +24,9 @@ class ToolMethodSecurityTest {
     @EnableMethodSecurity
     static class Config {
         @Bean WorkoutTools workoutTools(HevyClient client) { return new WorkoutTools(client); }
-        @Bean RoutineTools routineTools(HevyClient client) { return new RoutineTools(client); }
+        @Bean RoutineTools routineTools(HevyClient client, RoutineUpdateService updateService) {
+            return new RoutineTools(client, updateService);
+        }
         @Bean ExerciseTemplateTools exerciseTemplateTools(HevyClient client) {
             return new ExerciseTemplateTools(client);
         }
@@ -37,6 +40,9 @@ class ToolMethodSecurityTest {
 
     @MockitoBean
     HevyClient client;
+
+    @MockitoBean
+    RoutineUpdateService updateService;
 
     @Autowired
     WorkoutTools workoutTools;
@@ -68,14 +74,14 @@ class ToolMethodSecurityTest {
     void routineReadScopeCannotWrite() {
         routineTools.getRoutines(1, 10);
         routineTools.getRoutine("r1");
-        var update = new RoutineUpdateRequest(new RoutineUpdateRequest.RoutineUpdate("Test", null, List.of()));
+        var update = new RoutineUpdateInput(new RoutineUpdateInput.RoutineUpdate("Test", null, List.of()));
         assertThatThrownBy(() -> routineTools.updateRoutine("r1", update)).isInstanceOf(AccessDeniedException.class);
     }
 
     @Test
     @WithMockUser(authorities = "SCOPE_write:routines")
     void routineWriteScopeDoesNotGrantReads() {
-        var update = new RoutineUpdateRequest(new RoutineUpdateRequest.RoutineUpdate("Test", null, List.of()));
+        var update = new RoutineUpdateInput(new RoutineUpdateInput.RoutineUpdate("Test", null, List.of()));
         routineTools.updateRoutine("r1", update);
         assertThatThrownBy(() -> routineTools.getRoutine("r1")).isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> workoutTools.getWorkouts(1, 10)).isInstanceOf(AccessDeniedException.class);

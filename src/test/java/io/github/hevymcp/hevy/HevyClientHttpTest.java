@@ -3,7 +3,8 @@ package io.github.hevymcp.hevy;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.hevymcp.config.HevyProperties;
-import io.github.hevymcp.hevy.model.RoutineUpdateRequest;
+import io.github.hevymcp.hevy.model.HevyUpdateRoutineRequest;
+import io.github.hevymcp.mcp.model.RoutineUpdateInput;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,9 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
@@ -38,6 +42,8 @@ class HevyClientHttpTest {
     private final AtomicInteger responseStatus = new AtomicInteger(200);
     private final AtomicReference<String> responseBody = new AtomicReference<>("{}");
     private final AtomicReference<Request> request = new AtomicReference<>();
+    private final Queue<Response> responses = new ConcurrentLinkedQueue<>();
+    private final List<Request> requests = new CopyOnWriteArrayList<>();
 
     @BeforeEach
     void setUp() throws IOException {
@@ -218,18 +224,18 @@ class HevyClientHttpTest {
     }
 
     @Test
-    void serializesRoutineUpdateAndDeserializesResponse() {
+    void serializesRoutineUpdateAndIgnoresPartialResponse() {
         responseBody.set("""
                 {"id":"r1","title":"Upper revised","exercises":[]}
                 """);
-        var set = new RoutineUpdateRequest.SetUpdate(
+        var set = new HevyUpdateRoutineRequest.SetUpdate(
                 "normal", new BigDecimal("80.5"), 8, null, null, null, null);
-        var exercise = new RoutineUpdateRequest.ExerciseUpdate(
+        var exercise = new HevyUpdateRoutineRequest.ExerciseUpdate(
                 "template-1", 7, 90, "Controlled", List.of(set));
-        var update = new RoutineUpdateRequest(new RoutineUpdateRequest.RoutineUpdate(
+        var update = new HevyUpdateRoutineRequest(new HevyUpdateRoutineRequest.RoutineUpdate(
                 "Upper revised", "Notes", List.of(exercise)));
 
-        assertThat(client.updateRoutine("r1", update).title()).isEqualTo("Upper revised");
+        client.putRoutine("r1", update);
         assertThat(request.get().method()).isEqualTo("PUT");
         assertThat(request.get().path()).isEqualTo("/v1/routines/r1");
         assertThat(request.get().body())
@@ -239,6 +245,40 @@ class HevyClientHttpTest {
                 .contains("\"rest_seconds\":90")
                 .contains("\"weight_kg\":80.5")
                 .doesNotContain("distance_meters", "duration_seconds", "custom_metric", "rep_range");
+    }
+
+    @Test
+    void updateWorkflowAccepts204ThenFetchesCanonicalRoutine() {
+        responses.add(new Response(200, """
+                {"routine":{"id":"r1","title":"Squat Week 1","notes":"Existing notes",
+                "updated_at":"before","created_at":"created","exercises":[{"index":0,
+                "title":"Squat","rest_seconds":180,"notes":"Keep this","exercise_template_id":"squat",
+                "supersets_id":12,"sets":[{"index":0,"type":"normal","weight_kg":70.3,"reps":5}] }]}}
+                """));
+        responses.add(new Response(204, ""));
+        responses.add(new Response(200, """
+                {"routine":{"id":"r1","title":"Squat Week 1 revised","notes":"Existing notes",
+                "updated_at":"after","created_at":"created","exercises":[{"index":0,
+                "title":"Squat","rest_seconds":180,"notes":"Keep this","exercise_template_id":"squat",
+                "supersets_id":12,"sets":[{"index":0,"type":"normal","weight_kg":70.3,"reps":5}] }]}}
+                """));
+        var input = new RoutineUpdateInput(
+                new RoutineUpdateInput.RoutineUpdate("Squat Week 1 revised", "", null));
+        var service = new RoutineUpdateService(client, new RoutineUpdateMapper());
+
+        var result = service.updateRoutine("r1", input);
+
+        assertThat(result.title()).isEqualTo("Squat Week 1 revised");
+        assertThat(result.createdAt()).isEqualTo("created");
+        assertThat(result.exercises()).hasSize(1);
+        assertThat(requests).extracting(Request::method).containsExactly("GET", "PUT", "GET");
+        assertThat(requests).extracting(Request::path).containsExactly(
+                "/v1/routines/r1", "/v1/routines/r1", "/v1/routines/r1");
+        assertThat(requests.get(1).body())
+                .contains("\"notes\":\"Existing notes\"")
+                .contains("\"exercise_template_id\":\"squat\"")
+                .contains("\"superset_id\":12")
+                .doesNotContain("duration_seconds", "distance_meters");
     }
 
     @Test
@@ -314,18 +354,31 @@ class HevyClientHttpTest {
 
     private void handle(HttpExchange exchange) throws IOException {
         byte[] incoming = exchange.getRequestBody().readAllBytes();
-        request.set(new Request(
+        Request captured = new Request(
                 exchange.getRequestMethod(),
                 exchange.getRequestURI().toString(),
                 exchange.getRequestHeaders().getFirst("api-key"),
-                new String(incoming, StandardCharsets.UTF_8)));
-        byte[] outgoing = responseBody.get().getBytes(StandardCharsets.UTF_8);
+                new String(incoming, StandardCharsets.UTF_8));
+        request.set(captured);
+        requests.add(captured);
+        Response queued = responses.poll();
+        int status = queued == null ? responseStatus.get() : queued.status();
+        String body = queued == null ? responseBody.get() : queued.body();
+        byte[] outgoing = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", MediaType.APPLICATION_JSON_VALUE);
-        exchange.sendResponseHeaders(responseStatus.get(), outgoing.length);
-        exchange.getResponseBody().write(outgoing);
+        if (status == 204) {
+            exchange.sendResponseHeaders(status, -1);
+        }
+        else {
+            exchange.sendResponseHeaders(status, outgoing.length);
+            exchange.getResponseBody().write(outgoing);
+        }
         exchange.close();
     }
 
     private record Request(String method, String path, String apiKey, String body) {
+    }
+
+    private record Response(int status, String body) {
     }
 }

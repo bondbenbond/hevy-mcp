@@ -1,5 +1,6 @@
 package io.github.hevymcp.hevy.model;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import org.jspecify.annotations.Nullable;
 
@@ -9,9 +10,9 @@ import java.util.List;
 public record RoutineExercise(
         Integer index,
         String title,
-        @Nullable String restSeconds,
+        @Nullable Integer restSeconds,
         @Nullable String notes,
         String exerciseTemplateId,
-        @Nullable Integer supersetsId,
+        @JsonAlias("supersets_id") @Nullable Integer supersetId,
         List<RoutineSet> sets) {
 }

@@ -8,7 +8,7 @@ import io.github.hevymcp.hevy.model.ExerciseHistory;
 import io.github.hevymcp.hevy.model.Routine;
 import io.github.hevymcp.hevy.model.RoutinePage;
 import io.github.hevymcp.hevy.model.RoutineResponse;
-import io.github.hevymcp.hevy.model.RoutineUpdateRequest;
+import io.github.hevymcp.hevy.model.HevyUpdateRoutineRequest;
 import io.github.hevymcp.hevy.model.RoutineFolder;
 import io.github.hevymcp.hevy.model.RoutineFolderPage;
 import io.github.hevymcp.hevy.model.Workout;
@@ -84,15 +84,15 @@ public final class HevyClient {
         return response.routine();
     }
 
-    public Routine updateRoutine(String routineId, RoutineUpdateRequest request) {
+    public void putRoutine(String routineId, HevyUpdateRoutineRequest request) {
         requireId(routineId, "routine");
         if (request == null || request.routine() == null) {
             throw new HevyApiException(HevyErrorCode.BAD_REQUEST, "A routine update body is required.");
         }
         log.info("Calling Hevy operation=update_routine routineId={}", routineId);
-        return execute(webClient.put().uri("/v1/routines/{id}", routineId).bodyValue(request)
+        execute(webClient.put().uri("/v1/routines/{id}", routineId).bodyValue(request)
                 .retrieve().onStatus(HttpStatusCode::isError, upstream -> upstreamError(upstream, "routine"))
-                .bodyToMono(Routine.class), "routine");
+                .toBodilessEntity(), "routine update");
     }
 
     public ExerciseTemplatePage getExerciseTemplates(int page, int pageSize) {
@@ -241,19 +241,23 @@ public final class HevyClient {
             default -> "workout";
         };
         return switch (status.value()) {
-            case 400 -> new HevyApiException(HevyErrorCode.BAD_REQUEST,
-                    "Hevy rejected the request as invalid." + validationDetail);
-            case 401 -> new HevyApiException(HevyErrorCode.CREDENTIALS_REJECTED,
-                    "The Hevy API rejected the configured API credentials.");
-            case 403 -> new HevyApiException(HevyErrorCode.FORBIDDEN,
-                    "The Hevy API denied this operation.");
-            case 404 -> new HevyApiException(HevyErrorCode.NOT_FOUND,
-                    "The requested Hevy " + noun + " was not found.");
-            case 429 -> new HevyApiException(HevyErrorCode.RATE_LIMITED,
-                    "The Hevy API rate limit was reached. Try again later.");
-            default -> new HevyApiException(HevyErrorCode.UNAVAILABLE,
-                    "The Hevy API is temporarily unavailable.");
+            case 400 -> withStatus(HevyErrorCode.BAD_REQUEST,
+                    "Hevy rejected the request as invalid." + validationDetail, status);
+            case 401 -> withStatus(HevyErrorCode.CREDENTIALS_REJECTED,
+                    "The Hevy API rejected the configured API credentials.", status);
+            case 403 -> withStatus(HevyErrorCode.FORBIDDEN,
+                    "The Hevy API denied this operation.", status);
+            case 404 -> withStatus(HevyErrorCode.NOT_FOUND,
+                    "The requested Hevy " + noun + " was not found.", status);
+            case 429 -> withStatus(HevyErrorCode.RATE_LIMITED,
+                    "The Hevy API rate limit was reached. Try again later.", status);
+            default -> withStatus(HevyErrorCode.UNAVAILABLE,
+                    "The Hevy API is temporarily unavailable.", status);
         };
+    }
+
+    private static HevyApiException withStatus(HevyErrorCode code, String message, HttpStatusCode status) {
+        return new HevyApiException(code, message, null, status.value());
     }
 
     private static String safeValidationDetail(UpstreamErrorBody body) {

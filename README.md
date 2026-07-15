@@ -44,7 +44,7 @@ does not need or accept an OAuth client ID or client secret.
 | `get_workout` | Read one workout by ID | `read:workouts` |
 | `get_routines` | Read a paginated routine list | `read:routines` |
 | `get_routine` | Read one routine by ID | `read:routines` |
-| `update_routine` | Replace an existing routine definition | `write:routines` |
+| `update_routine` | Merge changes into and verify an existing routine | `write:routines` |
 | `get_exercise_templates` | Read a paginated exercise-template list | `read:exercise_templates` |
 | `search_exercise_templates` | Search templates by name, ID, type, muscle, or equipment | `read:exercise_templates` |
 | `get_exercise_template` | Read one exercise template by ID | `read:exercise_templates` |
@@ -55,8 +55,10 @@ does not need or accept an OAuth client ID or client secret.
 Hevy limits workout, routine, and routine-folder pages to 10 items and exercise-template pages
 to 100. The list tools use those respective limits by default. Exercise-template search walks
 the paginated catalog and returns up to 25 matches by default.
-Read a routine before updating it: Hevy's update operation accepts a replacement routine payload,
-so callers should preserve every exercise and set that is not intentionally changed.
+Routine updates use read–merge–write–read semantics. Omitted exercises, sets, notes, supersets,
+and conditional metrics are preserved from the current routine; a supplied exercise or set list
+defines that list's replacement order. After Hevy accepts the write, the server fetches and
+returns the complete canonical routine instead of relying on Hevy's possibly partial PUT response.
 
 ## Configuration
 
@@ -213,8 +215,8 @@ See [SECURITY.md](SECURITY.md) for private vulnerability reporting guidance.
 - **403 from a tool:** grant that tool's required scope; scopes are mapped to `SCOPE_...`
   authorities by Spring Security.
 - **Hevy credentials rejected:** rotate or correct `HEVY_API_KEY`; do not paste it into an issue.
-- **Hevy request invalid:** check page limits and ensure routine updates contain the complete
-  intended routine structure.
+- **Hevy request invalid:** check the bounded Hevy validation detail included in the tool error.
+  Routine update errors identify whether preflight read, PUT, or post-write verification failed.
 
 ## License
 

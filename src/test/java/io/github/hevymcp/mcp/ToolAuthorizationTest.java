@@ -1,6 +1,7 @@
 package io.github.hevymcp.mcp;
 
 import io.github.hevymcp.hevy.HevyClient;
+import io.github.hevymcp.hevy.RoutineUpdateService;
 import io.github.hevymcp.hevy.model.ExerciseTemplate;
 import io.github.hevymcp.hevy.model.ExerciseTemplatePage;
 import io.github.hevymcp.hevy.model.ExerciseTemplateSearchResult;
@@ -9,7 +10,7 @@ import io.github.hevymcp.hevy.model.RoutineFolder;
 import io.github.hevymcp.hevy.model.RoutineFolderPage;
 import io.github.hevymcp.hevy.model.Routine;
 import io.github.hevymcp.hevy.model.RoutinePage;
-import io.github.hevymcp.hevy.model.RoutineUpdateRequest;
+import io.github.hevymcp.mcp.model.RoutineUpdateInput;
 import io.github.hevymcp.hevy.model.Workout;
 import io.github.hevymcp.hevy.model.WorkoutPage;
 import org.junit.jupiter.api.Test;
@@ -42,13 +43,14 @@ class ToolAuthorizationTest {
     void routineToolsDelegateToClient() {
         HevyClient client = mock(HevyClient.class);
         RoutinePage page = new RoutinePage(1, 1, List.of());
-        Routine routine = new Routine("r1", "Test", null, null, null, List.of());
-        RoutineUpdateRequest update = new RoutineUpdateRequest(
-                new RoutineUpdateRequest.RoutineUpdate("Test", null, List.of()));
+        Routine routine = new Routine("r1", "Test", null, null, null, null, List.of());
+        RoutineUpdateInput update = new RoutineUpdateInput(
+                new RoutineUpdateInput.RoutineUpdate("Test", null, List.of()));
+        RoutineUpdateService updateService = mock(RoutineUpdateService.class);
         when(client.getRoutines(1, 10)).thenReturn(page);
         when(client.getRoutine("r1")).thenReturn(routine);
-        when(client.updateRoutine("r1", update)).thenReturn(routine);
-        RoutineTools tools = new RoutineTools(client);
+        when(updateService.updateRoutine("r1", update)).thenReturn(routine);
+        RoutineTools tools = new RoutineTools(client, updateService);
 
         tools.getRoutines(null, null);
         tools.getRoutine("r1");
@@ -56,7 +58,7 @@ class ToolAuthorizationTest {
 
         verify(client).getRoutines(1, 10);
         verify(client).getRoutine("r1");
-        verify(client).updateRoutine("r1", update);
+        verify(updateService).updateRoutine("r1", update);
     }
 
     @Test

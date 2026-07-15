@@ -1,9 +1,10 @@
 package io.github.hevymcp.mcp;
 
 import io.github.hevymcp.hevy.HevyClient;
+import io.github.hevymcp.hevy.RoutineUpdateService;
 import io.github.hevymcp.hevy.model.Routine;
 import io.github.hevymcp.hevy.model.RoutinePage;
-import io.github.hevymcp.hevy.model.RoutineUpdateRequest;
+import io.github.hevymcp.mcp.model.RoutineUpdateInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.annotation.McpTool;
@@ -16,9 +17,11 @@ public class RoutineTools {
 
     private static final Logger log = LoggerFactory.getLogger(RoutineTools.class);
     private final HevyClient hevyClient;
+    private final RoutineUpdateService routineUpdateService;
 
-    public RoutineTools(HevyClient hevyClient) {
+    public RoutineTools(HevyClient hevyClient, RoutineUpdateService routineUpdateService) {
         this.hevyClient = hevyClient;
+        this.routineUpdateService = routineUpdateService;
     }
 
     @McpTool(
@@ -48,15 +51,15 @@ public class RoutineTools {
 
     @McpTool(
             name = "update_routine",
-            description = "Update an existing Hevy routine. Read the existing routine before using this tool. Preserve exercises, sets, and routine structure unless the requested change explicitly requires modifying them.",
+            description = "Update an existing Hevy routine. The server reads the current routine, preserves omitted or blank optional values, sends a complete normalized replacement to Hevy, then reads and returns the canonical updated routine.",
             generateOutputSchema = true,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = true, openWorldHint = true))
     @PreAuthorize("hasAuthority('SCOPE_write:routines')")
     public Routine updateRoutine(
             @McpToolParam(description = "The Hevy routine ID", required = true) String routineId,
-            @McpToolParam(description = "Complete replacement routine payload; preserve unchanged exercises and sets", required = true)
-            RoutineUpdateRequest update) {
+            @McpToolParam(description = "Requested routine changes. Omit exercises or sets to preserve them; when supplied, their list order defines the replacement order.", required = true)
+            RoutineUpdateInput update) {
         log.info("MCP tool invoked tool=update_routine routineId={}", routineId);
-        return hevyClient.updateRoutine(routineId, update);
+        return routineUpdateService.updateRoutine(routineId, update);
     }
 }
